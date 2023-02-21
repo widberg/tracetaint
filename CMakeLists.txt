@@ -23,19 +23,17 @@ option(X64DBG_DIR "Path to the x64dbg pluginsdk directory." "")
 set(CMAKE_CXX_STANDARD 20 CACHE INTERNAL "")
 set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE INTERNAL "")
 
-add_library(tracetaint SHARED tracetaint.cpp)
+add_subdirectory(zydis)
+
+add_library(tracetaint SHARED
+  tracetaint.cpp
+  taintengine.cpp
+)
 target_include_directories(tracetaint PRIVATE "${X64DBG_DIR}")
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    target_link_libraries(tracetaint PRIVATE
-        "${X64DBG_DIR}/pluginsdk/x64bridge.lib"
-        "${X64DBG_DIR}/pluginsdk/x64dbg.lib"
-    )
-    set(CMAKE_SHARED_LIBRARY_SUFFIX ".dp64" CACHE INTERNAL "")
-else()
-    target_link_libraries(tracetaint PRIVATE
-        "${X64DBG_DIR}/pluginsdk/x32bridge.lib"
-        "${X64DBG_DIR}/pluginsdk/x32dbg.lib"
-    )
-    set(CMAKE_SHARED_LIBRARY_SUFFIX ".dp32" CACHE INTERNAL "")
-endif()
+target_link_libraries(tracetaint PRIVATE
+  "Zydis"
+  "${X64DBG_DIR}/pluginsdk/x32bridge.lib"
+  "${X64DBG_DIR}/pluginsdk/x32dbg.lib"
+)
+set(CMAKE_SHARED_LIBRARY_SUFFIX ".dp32" CACHE INTERNAL "")
 install(TARGETS tracetaint DESTINATION ".")

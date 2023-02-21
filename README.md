@@ -1,12 +1,14 @@
 # TraceTaint
 
+An x32dbg plugin to follow data through a program.
+
 ## Getting Started
 
 ### Prerequisites
 
 * Git
 * CMake
-* x64dbg
+* x32dbg
 * Any Windows toolchain
 
 ### Checkout
@@ -17,7 +19,7 @@ git clone https://github.com/widberg/tracetaint.git
 
 ### Build
 
-Use the `x86/64 Native Tools Command Prompt for VS 2022` environment while generating and building the
+Use the `x86 Native Tools Command Prompt for VS 2022` environment while generating and building the
 project.
 
 ```sh
