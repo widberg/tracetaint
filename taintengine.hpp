@@ -23,8 +23,9 @@ public:
     static ZydisRegister registerGetLargestEnclosingOrRegister(ZydisRegister reg);
     static ZydisRegister registerGetFromString(char const *str);
 private:
-    std::set<ZyanU64> taintedaddresses;
-    bool taintedregisters[ZYDIS_REGISTER_MAX_VALUE] = {};
+    static ZyanU64 maskFromSize(ZyanU16 size);
+    std::set<ZyanU64> m_taintedMemory;
+    bool m_taintedRegisters[ZYDIS_REGISTER_MAX_VALUE] = {};
 };
 
 #endif // !TAINTENGINE_HPP

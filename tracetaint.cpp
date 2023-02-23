@@ -12,14 +12,39 @@
 #define PLUG_EXPORT extern "C" __declspec(dllexport)
 
 int pluginHandle;
+int hMenu;
 
 TaintEngine te;
+
+enum
+{
+	MENU_ENABLED,
+};
+
+static bool traceTaintEnabled = true;
+
+PLUG_EXPORT void CBMENUENTRY(CBTYPE, PLUG_CB_MENUENTRY* info)
+{
+	switch(info->hEntry)
+	{
+	case MENU_ENABLED:
+	{
+		traceTaintEnabled = !traceTaintEnabled;
+		BridgeSettingSetUint("TraceTaint", "Enabled", traceTaintEnabled);
+	}
+	break;
+	}
+}
 
 PLUG_EXPORT bool pluginit(PLUG_INITSTRUCT* initStruct) {
     initStruct->pluginVersion = 1;
     initStruct->sdkVersion = PLUG_SDKVERSION;
     strncpy_s(initStruct->pluginName, "TraceTaint", _TRUNCATE);
     pluginHandle = initStruct->pluginHandle;
+
+	duint setting = traceTaintEnabled;
+	BridgeSettingGetUint("TraceTaint", "Enabled", &setting);
+	traceTaintEnabled = !!setting;
     return true;
 }
 
@@ -84,12 +109,29 @@ bool tracetaint_dump(int argc, char *argv[]) {
     return true;
 }
 
+bool tracetaint_enable(int argc, char *argv[]) {
+    if (argc > 2) {
+        return false;
+    }
+    if (argc > 1) {
+        traceTaintEnabled = DbgValFromString(argv[1]);
+    } else {
+        traceTaintEnabled = !traceTaintEnabled;
+		BridgeSettingSetUint("TraceTaint", "Enabled", traceTaintEnabled);
+    }
+    return true;
+}
+
 PLUG_EXPORT void plugsetup(PLUG_SETUPSTRUCT* setupStruct) {
+    hMenu = setupStruct->hMenu;
     _plugin_logputs("tracetaint plugsetup");
     _plugin_registercommand(pluginHandle, "tracetaint_mem", tracetaint_mem, false);
     _plugin_registercommand(pluginHandle, "tracetaint_reg", tracetaint_reg, false);
     _plugin_registercommand(pluginHandle, "tracetaint_clear", tracetaint_clear, false);
     _plugin_registercommand(pluginHandle, "tracetaint_dump", tracetaint_dump, false);
+    
+	_plugin_menuaddentry(hMenu, MENU_ENABLED, "Enabled");
+	_plugin_menuentrysetchecked(pluginHandle, MENU_ENABLED, traceTaintEnabled);
 }
 
 static void getRegisterContext(ZydisRegisterContext *register_context) {
@@ -158,6 +200,9 @@ static void getRegisterContext(ZydisRegisterContext *register_context) {
 }
 
 static void updateTaint() {
+	if(!traceTaintEnabled)
+		return;
+    
     ZydisRegisterContext register_context;
     getRegisterContext(&register_context);
     duint cip = (duint)register_context.values[ZYDIS_REGISTER_EIP];
@@ -183,6 +228,10 @@ static void updateTaint() {
         _plugin_logprintf("%p %s\n", cip, basic_instruction_info.instruction);
         te.dump();
     }
+}
+
+PLUG_EXPORT void CBINITDEBUG(CBTYPE, PLUG_CB_INITDEBUG* info) {
+    te.clear();
 }
 
 PLUG_EXPORT void CBSTEPPED(CBTYPE, PLUG_CB_STEPPED* info) {

@@ -1,4 +1,6 @@
 #include "taintengine.hpp"
+#include "Zycore/Types.h"
+#include "Zydis/SharedTypes.h"
 
 #include <cstring>
 #include <sstream>
@@ -6,6 +8,10 @@
 void TaintEngine::setOperandTainted(ZydisDisassembledInstruction *instruction, ZydisDecodedOperand *operand, ZydisRegisterContext *register_context, bool tainted) {
     switch (operand->type) {
     case ZYDIS_OPERAND_TYPE_REGISTER:
+        if (operand->reg.value == ZYDIS_REGISTER_EIP || operand->reg.value == ZYDIS_REGISTER_RIP || operand->reg.value == ZYDIS_REGISTER_IP)
+        {
+            return;
+        }
         setRegisterTainted(operand->reg.value, tainted);
     case ZYDIS_OPERAND_TYPE_MEMORY:
     {
@@ -50,39 +56,39 @@ bool TaintEngine::isOperandTainted(ZydisDisassembledInstruction *instruction, Zy
 }
 
 void TaintEngine::setRegisterTainted(ZydisRegister reg, bool tainted) {
-    taintedregisters[registerGetLargestEnclosingOrRegister(reg)] = tainted;
+    m_taintedRegisters[registerGetLargestEnclosingOrRegister(reg)] = tainted;
 }
 
 bool TaintEngine::isRegisterTainted(ZydisRegister reg) const {
-    return taintedregisters[registerGetLargestEnclosingOrRegister(reg)];
+    return m_taintedRegisters[registerGetLargestEnclosingOrRegister(reg)];
 }
 
 void TaintEngine::setMemoryTainted(ZyanU64 address, ZyanU64 size, bool tainted) {
     for (int i = 0; i < size; ++i) {
         if (tainted) {
-            taintedaddresses.insert(address + i);
+            m_taintedMemory.insert(address + i);
         } else {
-            taintedaddresses.erase(address + i);
+            m_taintedMemory.erase(address + i);
         }
     }
 }
 
 bool TaintEngine::isMemoryTainted(ZyanU64 address) const {
-    return taintedaddresses.count(address);
+    return m_taintedMemory.count(address);
 }
 
 void TaintEngine::clear() {
-    taintedaddresses.clear();
-    memset(taintedregisters, 0, sizeof(taintedregisters));
+    m_taintedMemory.clear();
+    memset(m_taintedRegisters, 0, sizeof(m_taintedRegisters));
 }
 
 std::string TaintEngine::dump() const {
     std::stringstream ss;
-    for (auto address : taintedaddresses) {
+    for (auto address : m_taintedMemory) {
         ss << std::hex << address << '\n';
     }
-    for (int i = 0; i < sizeof(taintedregisters) / sizeof(taintedregisters[0]); ++i) {
-        if (taintedregisters[i]) {
+    for (int i = 0; i < sizeof(m_taintedRegisters) / sizeof(m_taintedRegisters[0]); ++i) {
+        if (m_taintedRegisters[i]) {
             ss << ZydisRegisterGetString((ZydisRegister)i) << '\n';
         }
     }
@@ -95,7 +101,26 @@ bool TaintEngine::updateTaint(ZydisDisassembledInstruction *instruction, ZydisRe
         if(instruction->operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER
                && instruction->operands[1].type == ZYDIS_OPERAND_TYPE_REGISTER
                && instruction->operands[0].reg.value == instruction->operands[1].reg.value) {
+            setOperandTainted(instruction, &instruction->operands[0], register_context, false);
             return false;
+        }
+        break;
+    case ZYDIS_MNEMONIC_OR:
+        if(instruction->operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE) {
+            ZyanU64 mask = maskFromSize(instruction->operands[1].size);
+            if ((instruction->operands[1].imm.value.u & mask) == mask) {
+                setOperandTainted(instruction, &instruction->operands[0], register_context, false);
+                return false;
+            }
+        }
+        break;
+    case ZYDIS_MNEMONIC_AND:
+        if(instruction->operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE) {
+            ZyanU64 mask = maskFromSize(instruction->operands[1].size);
+            if ((instruction->operands[1].imm.value.u & mask) == 0) {
+                setOperandTainted(instruction, &instruction->operands[0], register_context, false);
+                return false;
+            }
         }
         break;
     default:
@@ -140,4 +165,21 @@ ZydisRegister TaintEngine::registerGetFromString(char const *str) {
     }
 
     return reg;
+}
+
+
+ZyanU64 TaintEngine::maskFromSize(ZyanU16 size) {
+    switch (size) {
+    case 8:
+        return 0xFF;
+    case 16:
+        return 0xFFFF;
+    case 32:
+        return 0xFFFFFFFF;
+    case 64:
+        return 0xFFFFFFFFFFFFFFFF;
+    default:
+        break;
+    }
+    return 0;
 }
