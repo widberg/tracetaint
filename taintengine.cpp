@@ -8,10 +8,6 @@
 void TaintEngine::setOperandTainted(ZydisDisassembledInstruction *instruction, ZydisDecodedOperand *operand, ZydisRegisterContext *register_context, bool tainted) {
     switch (operand->type) {
     case ZYDIS_OPERAND_TYPE_REGISTER:
-        if (operand->reg.value == ZYDIS_REGISTER_EIP || operand->reg.value == ZYDIS_REGISTER_RIP || operand->reg.value == ZYDIS_REGISTER_IP)
-        {
-            return;
-        }
         setRegisterTainted(operand->reg.value, tainted);
     case ZYDIS_OPERAND_TYPE_MEMORY:
     {
@@ -169,17 +165,5 @@ ZydisRegister TaintEngine::registerGetFromString(char const *str) {
 
 
 ZyanU64 TaintEngine::maskFromSize(ZyanU16 size) {
-    switch (size) {
-    case 8:
-        return 0xFF;
-    case 16:
-        return 0xFFFF;
-    case 32:
-        return 0xFFFFFFFF;
-    case 64:
-        return 0xFFFFFFFFFFFFFFFF;
-    default:
-        break;
-    }
-    return 0;
+    return (size == 64) ? 0xFFFFFFFFFFFFFFFF : (((ZyanU64)1 << size) - 1);
 }

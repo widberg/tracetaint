@@ -19,32 +19,50 @@ TaintEngine te;
 enum
 {
 	MENU_ENABLED,
+	MENU_STOP,
 };
 
 static bool traceTaintEnabled = true;
+static bool traceTaintStop = false;
+
+static bool updateTaint();
 
 PLUG_EXPORT void CBMENUENTRY(CBTYPE, PLUG_CB_MENUENTRY* info)
 {
+    _plugin_logputs("tracetaint CBMENUENTRY");
 	switch(info->hEntry)
 	{
 	case MENU_ENABLED:
-	{
-		traceTaintEnabled = !traceTaintEnabled;
-		BridgeSettingSetUint("TraceTaint", "Enabled", traceTaintEnabled);
-	}
-	break;
+        {
+            traceTaintEnabled = !traceTaintEnabled;
+            BridgeSettingSetUint("TraceTaint", "Enabled", traceTaintEnabled);
+        }
+        break;
+	case MENU_STOP:
+        {
+            traceTaintStop = !traceTaintStop;
+            BridgeSettingSetUint("TraceTaint", "Stop", traceTaintStop);
+        }
+        break;
 	}
 }
 
 PLUG_EXPORT bool pluginit(PLUG_INITSTRUCT* initStruct) {
+    _plugin_logputs("tracetaint pluginit 0");
     initStruct->pluginVersion = 1;
     initStruct->sdkVersion = PLUG_SDKVERSION;
     strncpy_s(initStruct->pluginName, "TraceTaint", _TRUNCATE);
     pluginHandle = initStruct->pluginHandle;
+    _plugin_logputs("tracetaint pluginit 1");
 
 	duint setting = traceTaintEnabled;
 	BridgeSettingGetUint("TraceTaint", "Enabled", &setting);
 	traceTaintEnabled = !!setting;
+
+	setting = traceTaintStop;
+	BridgeSettingGetUint("TraceTaint", "Stop", &setting);
+	traceTaintStop = !!setting;
+    _plugin_logputs("tracetaint pluginit 2");
     return true;
 }
 
@@ -54,10 +72,13 @@ PLUG_EXPORT bool plugstop() {
     _plugin_unregistercommand(pluginHandle, "tracetaint_reg");
     _plugin_unregistercommand(pluginHandle, "tracetaint_clear");
     _plugin_unregistercommand(pluginHandle, "tracetaint_dump");
+    _plugin_unregistercommand(pluginHandle, "tracetaint_enable");
+    _plugin_unregistercommand(pluginHandle, "tracetaint_update");
     return true;
 }
 
 bool tracetaint_mem(int argc, char *argv[]) {
+    _plugin_logputs("tracetaint tracetaint_mem");
     if (argc < 2 || argc > 4) {
         return false;
     }
@@ -79,6 +100,7 @@ bool tracetaint_mem(int argc, char *argv[]) {
 }
 
 bool tracetaint_reg(int argc, char *argv[]) {
+    _plugin_logputs("tracetaint tracetaint_reg");
     if (argc < 2 || argc > 3) {
         return false;
     }
@@ -100,16 +122,19 @@ bool tracetaint_reg(int argc, char *argv[]) {
 }
 
 bool tracetaint_clear(int argc, char *argv[]) {
+    _plugin_logputs("tracetaint tracetaint_clear");
     te.clear();
     return true;
 }
 
 bool tracetaint_dump(int argc, char *argv[]) {
-    te.dump();
+    _plugin_logputs("tracetaint tracetaint_dump");
+    _plugin_logputs(te.dump().c_str());
     return true;
 }
 
 bool tracetaint_enable(int argc, char *argv[]) {
+    _plugin_logputs("tracetaint tracetaint_enable");
     if (argc > 2) {
         return false;
     }
@@ -122,16 +147,28 @@ bool tracetaint_enable(int argc, char *argv[]) {
     return true;
 }
 
+bool tracetaint_update(int argc, char *argv[]) {
+    _plugin_logputs("tracetaint tracetaint_update");
+    updateTaint();
+    return true;
+}
+
 PLUG_EXPORT void plugsetup(PLUG_SETUPSTRUCT* setupStruct) {
     hMenu = setupStruct->hMenu;
-    _plugin_logputs("tracetaint plugsetup");
+    _plugin_logputs("tracetaint plugsetup 0");
     _plugin_registercommand(pluginHandle, "tracetaint_mem", tracetaint_mem, false);
     _plugin_registercommand(pluginHandle, "tracetaint_reg", tracetaint_reg, false);
     _plugin_registercommand(pluginHandle, "tracetaint_clear", tracetaint_clear, false);
     _plugin_registercommand(pluginHandle, "tracetaint_dump", tracetaint_dump, false);
+    _plugin_registercommand(pluginHandle, "tracetaint_enable", tracetaint_enable, false);
+    _plugin_registercommand(pluginHandle, "tracetaint_update", tracetaint_update, false);
     
+    _plugin_logputs("tracetaint plugsetup 1");
 	_plugin_menuaddentry(hMenu, MENU_ENABLED, "Enabled");
 	_plugin_menuentrysetchecked(pluginHandle, MENU_ENABLED, traceTaintEnabled);
+	_plugin_menuaddentry(hMenu, MENU_STOP, "Stop");
+	_plugin_menuentrysetchecked(pluginHandle, MENU_STOP, traceTaintStop);
+    _plugin_logputs("tracetaint plugsetup 2");
 }
 
 static void getRegisterContext(ZydisRegisterContext *register_context) {
@@ -199,9 +236,9 @@ static void getRegisterContext(ZydisRegisterContext *register_context) {
     register_context->values[ZYDIS_REGISTER_GS] = regdump.regcontext.gs;
 }
 
-static void updateTaint() {
+static bool updateTaint() {
 	if(!traceTaintEnabled)
-		return;
+		return false;
     
     ZydisRegisterContext register_context;
     getRegisterContext(&register_context);
@@ -220,24 +257,32 @@ static void updateTaint() {
         /* instruction:     */ &instruction
     ))) {
         _plugin_logputs("tracetaint zydis failed");
-        return;
+        return false;
     }
 
     if (te.updateTaint(&instruction, &register_context)) {
         _plugin_logputs("tracetaint taint propagated");
         _plugin_logprintf("%p %s\n", cip, basic_instruction_info.instruction);
-        te.dump();
+        _plugin_logputs(te.dump().c_str());
+        return true;
     }
+    return false;
 }
 
 PLUG_EXPORT void CBINITDEBUG(CBTYPE, PLUG_CB_INITDEBUG* info) {
+    _plugin_logputs("tracetaint CBINITDEBUG");
     te.clear();
 }
 
 PLUG_EXPORT void CBSTEPPED(CBTYPE, PLUG_CB_STEPPED* info) {
+    _plugin_logputs("tracetaint CBSTEPPED");
     updateTaint();
 }
 
 PLUG_EXPORT void CBTRACEEXECUTE(CBTYPE, PLUG_CB_TRACEEXECUTE* info) {
-    updateTaint();
+    _plugin_logputs("tracetaint CBTRACEEXECUTE");
+    info->stop = false;
+    if (updateTaint() && traceTaintStop) {
+        info->stop = true;
+    }
 }
